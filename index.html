@@ -9,17 +9,16 @@
   <meta name="theme-color" content="#0F4C81" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
-  <!-- Dependencies (FIXED: no trailing spaces, no duplicates) -->
+  <!-- Dependencies (no trailing spaces!) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
   <script src="https://unpkg.com/lucide@0.378.0/dist/umd/lucide.min.js"></script>
 
-  <!-- Expose React globally for Recharts UMD -->
   <script>
-    window.React = window.React || React;
-    window.ReactDOM = window.ReactDOM || ReactDOM;
+    window.React = React;
+    window.ReactDOM = ReactDOM;
   </script>
 
   <style>
@@ -31,15 +30,19 @@
 <body class="bg-[#F8FAFC]">
   <div id="root"></div>
 
-  <!-- Load storage utility -->
   <script type="module">
-    import { AuthStorage } from './storage.js';
+    import {
+      AuthDB,
+      MetricsDB,
+      PillarDB,
+      AiHistoryDB,
+      UserPrefsDB
+    } from './storage.js';
 
-    // Recharts & Lucide
     const { useState, useEffect, useMemo } = React;
     const {
       LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-      ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell
+      ResponsiveContainer, AreaChart, Area
     } = window.Recharts || {};
 
     const Icon = ({ name, size = 20, className = "" }) => {
@@ -76,17 +79,16 @@
 
     // --- Login Screen ---
     const LoginScreen = ({ onLogin }) => {
-      const [user, setUser] = useState({ email: '', password: '' });
+      const [form, setForm] = useState({ email: '', password: '' });
       const [error, setError] = useState('');
 
       const handleSubmit = (e) => {
         e.preventDefault();
-        if (user.email === 'admin@ddrive-m.com' && user.password === 'resilience2025') {
-          const userInfo = { name: 'Command Admin', email: user.email };
-          AuthStorage.save(userInfo);
-          onLogin(userInfo);
+        if (AuthDB.validate(form.email, form.password)) {
+          AuthDB.save(form.email);
+          onLogin(AuthDB.get());
         } else {
-          setError('Invalid credentials. (Try: admin@ddrive-m.com / resilience2025)');
+          setError('Invalid credentials. Try: admin@ddrive-m.com / resilience2025');
         }
       };
 
@@ -97,25 +99,23 @@
           React.createElement('div', { className: "flex justify-center mb-8" }, React.createElement(DDRiVELogo, { className: "h-16 w-auto", iconOnly: true })),
           React.createElement('form', { onSubmit: handleSubmit, className: "space-y-6" },
             React.createElement('div', { className: "space-y-2" },
-              React.createElement('label', { className: "text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest" }, "Identifier"),
+              React.createElement('label', { className: "text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest" }, "Email"),
               React.createElement('input', {
                 type: "email",
-                placeholder: "Email",
                 required: true,
                 className: "w-full px-6 py-4 bg-slate-50 border rounded-2xl focus:ring-2 ring-blue-500 outline-none transition-all",
-                value: user.email,
-                onChange: (e) => setUser({ ...user, email: e.target.value })
+                value: form.email,
+                onChange: (e) => setForm({ ...form, email: e.target.value })
               })
             ),
             React.createElement('div', { className: "space-y-2" },
-              React.createElement('label', { className: "text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest" }, "Access Key"),
+              React.createElement('label', { className: "text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest" }, "Password"),
               React.createElement('input', {
                 type: "password",
-                placeholder: "Password",
                 required: true,
                 className: "w-full px-6 py-4 bg-slate-50 border rounded-2xl focus:ring-2 ring-blue-500 outline-none transition-all",
-                value: user.password,
-                onChange: (e) => setUser({ ...user, password: e.target.value })
+                value: form.password,
+                onChange: (e) => setForm({ ...form, password: e.target.value })
               })
             ),
             error && React.createElement('p', { className: "text-xs text-rose-500 font-bold text-center bg-rose-50 p-3 rounded-xl" }, error),
@@ -136,30 +136,8 @@
       const [aiPrompt, setAiPrompt] = useState("");
       const [aiResponse, setAiResponse] = useState(null);
       const [isAiLoading, setIsAiLoading] = useState(false);
-
-      // Check for existing session on mount
-      useEffect(() => {
-        const user = AuthStorage.get();
-        if (user) {
-          setCurrentUser(user);
-        }
-      }, []);
-
-      const handleLogout = () => {
-        AuthStorage.clear();
-        setCurrentUser(null);
-      };
-
-      if (!currentUser) return React.createElement(LoginScreen, { onLogin: setCurrentUser });
-
-      const handleAiInquiry = () => {
-        if (!aiPrompt.trim()) return;
-        setIsAiLoading(true);
-        setTimeout(() => {
-          setAiResponse("Intelligence Analysis: Based on current telemetry, recommend strengthening Sector 7 flood barriers and recalibrating seismic sensors in the Eastern corridor.");
-          setIsAiLoading(false);
-        }, 1500);
-      };
+      const [aiHistory, setAiHistory] = useState([]);
+      const [metrics, setMetrics] = useState(MetricsDB.get());
 
       const PILLARS = [
         { id: 'detection', name: 'Detection', icon: 'Radio', desc: 'Real-time threat identification' },
@@ -170,6 +148,42 @@
         { id: 'enhancement', name: 'Enhancement', icon: 'BrainCircuit', desc: 'Adaptive learning' },
         { id: 'monitoring', name: 'Monitoring', icon: 'Activity', desc: 'Resilience tracking' },
       ];
+
+      // Load session & preferences on mount
+      useEffect(() => {
+        const user = AuthDB.get();
+        if (user) setCurrentUser(user);
+
+        const prefs = UserPrefsDB.get();
+        setSidebarCollapsed(prefs.sidebarCollapsed);
+
+        setAiHistory(AiHistoryDB.list());
+      }, []);
+
+      const toggleSidebar = () => {
+        const next = !isSidebarCollapsed;
+        setSidebarCollapsed(next);
+        UserPrefsDB.set({ sidebarCollapsed: next });
+      };
+
+      const handleLogout = () => {
+        AuthDB.clear();
+        setCurrentUser(null);
+      };
+
+      const handleAiInquiry = () => {
+        if (!aiPrompt.trim()) return;
+        setIsAiLoading(true);
+        setTimeout(() => {
+          const response = "Intelligence Analysis: Based on current telemetry, recommend strengthening Sector 7 flood barriers and recalibrating seismic sensors in the Eastern corridor.";
+          AiHistoryDB.add(aiPrompt, response);
+          setAiHistory(AiHistoryDB.list());
+          setAiResponse(response);
+          setIsAiLoading(false);
+        }, 1500);
+      };
+
+      if (!currentUser) return React.createElement(LoginScreen, { onLogin: setCurrentUser });
 
       return React.createElement(
         'div', { className: "flex h-screen overflow-hidden bg-[#F8FAFC]" },
@@ -195,7 +209,7 @@
           ),
           React.createElement('div', { className: "p-4" },
             React.createElement('button', {
-              onClick: () => setSidebarCollapsed(!isSidebarCollapsed),
+              onClick: toggleSidebar,
               className: "w-full flex justify-center p-3 bg-white border rounded-xl text-slate-400 hover:text-blue-600 transition-colors"
             }, React.createElement(Icon, { name: isSidebarCollapsed ? 'ChevronRight' : 'ChevronLeft' }))
           )
@@ -212,25 +226,142 @@
               React.createElement('div', { className: "flex items-center gap-3 pl-4 border-l" },
                 React.createElement('div', { className: "text-right hidden sm:block" },
                   React.createElement('p', { className: "text-xs font-bold text-slate-900" }, currentUser.name),
-                  React.createElement('p', { className: "text-[10px] text-slate-400 font-medium" }, "Platform Admin")
+                  React.createElement('p', { className: "text-[10px] text-slate-400 font-medium" }, "Platform User")
                 ),
                 React.createElement('div', {
                   onClick: handleLogout,
-                  className: "cursor-pointer h-10 w-10 bg-blue-600 rounded-xl text-white flex items-center justify-center font-bold shadow-lg shadow-blue-100 hover:bg-blue-700"
-                }, "AD")
+                  className: "cursor-pointer h-10 w-10 bg-blue-600 rounded-xl text-white flex items-center justify-center font-bold shadow-lg shadow-blue-100 hover:bg-blue-700",
+                  title: "Logout"
+                }, React.createElement(Icon, { name: "LogOut", size: 16 }))
               )
             )
           ),
           React.createElement('div', { className: "p-10 max-w-7xl mx-auto space-y-8" },
-            activeTab === 'dashboard' && /* Dashboard JSX */,
-            activeTab === 'enhancement' && /* AI View JSX */,
-            activeTab !== 'dashboard' && activeTab !== 'enhancement' && /* Placeholder JSX */
+            // Dashboard
+            activeTab === 'dashboard' && React.createElement(
+              'div', { className: "space-y-8" },
+              React.createElement('div', { className: "flex justify-end" },
+                React.createElement('button',
+                  {
+                    onClick: () => {
+                      const updated = MetricsDB.update({
+                        activeSensors: 1240 + Math.floor(Math.random() * 20),
+                        resilienceScore: 80 + Math.floor(Math.random() * 10),
+                        criticalHazards: [3, 4, 5, 2][Math.floor(Math.random() * 4)]
+                      });
+                      setMetrics(updated);
+                    },
+                    className: "px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium flex items-center gap-2"
+                  },
+                  React.createElement(Icon, { name: "RefreshCw", size: 16 }), " Refresh Data"
+                )
+              ),
+              React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-4 gap-6" },
+                [
+                  { label: 'Critical Hazards', val: metrics.criticalHazards, color: 'text-rose-600', sub: 'High Priority' },
+                  { label: 'Active Sensors', val: metrics.activeSensors.toLocaleString(), color: 'text-emerald-600', sub: `${metrics.uptime}% Uptime` },
+                  { label: 'Resilience Score', val: `${metrics.resilienceScore}%`, color: 'text-blue-600', sub: 'Improving' },
+                  { label: 'Readiness Level', val: metrics.readinessLevel, color: 'text-amber-600', sub: 'Full Capacity' }
+                ].map((stat, i) => React.createElement(
+                  'div', { key: i, className: "bg-white p-6 rounded-3xl border shadow-sm" },
+                  React.createElement('p', { className: "text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1" }, stat.label),
+                  React.createElement('h3', { className: `text-3xl font-black ${stat.color}` }, stat.val),
+                  React.createElement('p', { className: "text-[10px] font-medium text-slate-400 mt-1" }, stat.sub)
+                ))
+              ),
+              React.createElement('div', { className: "bg-white p-8 rounded-[2.5rem] border shadow-sm mt-6" },
+                React.createElement('h3', { className: "font-bold text-slate-800 mb-8" }, "Risk Forecast & Intelligence"),
+                React.createElement('div', { className: "h-72" },
+                  AreaChart ? React.createElement(
+                    ResponsiveContainer, { width: "100%", height: "100%" },
+                    React.createElement(
+                      AreaChart, { data: [
+                        { n: 'Oct', r: 40 }, { n: 'Nov', r: 55 },
+                        { n: 'Dec', r: 48 }, { n: 'Jan', r: 70 },
+                        { n: 'Feb', r: 62 }, { n: 'Mar', r: 75 }
+                      ] },
+                      React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#f1f5f9" }),
+                      React.createElement(XAxis, { dataKey: "n", axisLine: false, tickLine: false, tick: { fontSize: 10, fontWeight: 700 }, dy: 10 }),
+                      React.createElement(YAxis, { hide: true }),
+                      React.createElement(Tooltip, { contentStyle: { borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' } }),
+                      React.createElement(Area, { type: "monotone", dataKey: "r", stroke: "#1B75BC", strokeWidth: 3, fill: "#3B82F6", fillOpacity: 0.1 })
+                    )
+                  ) : React.createElement('div', { className: "h-full flex items-center justify-center text-slate-300 italic" }, "Charting module loading...")
+                )
+              )
+            ),
+
+            // Enhancement Tab
+            activeTab === 'enhancement' && React.createElement(
+              'div', { className: "max-w-4xl mx-auto space-y-8" },
+              React.createElement('div', { className: "text-center space-y-3" },
+                React.createElement('div', { className: "inline-flex p-4 bg-blue-50 rounded-3xl text-blue-600 mb-2" }, React.createElement(Icon, { name: "BrainCircuit", size: 32 })),
+                React.createElement('h3', { className: "text-3xl font-black" }, "Adaptive Learning AI"),
+                React.createElement('p', { className: "text-slate-500 text-sm" }, "Query the DDRiVE-M engine for predictive insights.")
+              ),
+              React.createElement('div', { className: "bg-white p-8 rounded-[2.5rem] border shadow-xl" },
+                React.createElement('textarea',
+                  {
+                    className: "w-full bg-slate-50 border border-slate-100 rounded-3xl p-6 text-sm outline-none resize-none mb-4 focus:ring-2 ring-blue-500 min-h-[120px]",
+                    placeholder: "Example: What are the primary risk vectors for the coastal energy grid in Q2?",
+                    value: aiPrompt,
+                    onChange: (e) => setAiPrompt(e.target.value)
+                  }
+                ),
+                React.createElement('button',
+                  {
+                    onClick: handleAiInquiry,
+                    disabled: isAiLoading || !aiPrompt.trim(),
+                    className: "w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-2xl font-bold transition-colors"
+                  },
+                  isAiLoading ? "Synthesizing Data..." : "Execute Intelligence Query"
+                ),
+                aiResponse && React.createElement(
+                  'div', { className: "mt-8" },
+                  React.createElement('div', { className: "flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3" }, React.createElement(Icon, { name: "Cpu", size: 14 }), " Intelligence Output"),
+                  React.createElement('div', { className: "p-6 bg-slate-50 border border-slate-100 rounded-2xl text-slate-700 text-sm leading-relaxed" }, aiResponse)
+                )
+              ),
+              aiHistory.length > 0 && React.createElement(
+                'div', { className: "bg-white p-6 rounded-2xl border mt-6" },
+                React.createElement('h4', { className: "font-bold text-slate-800 mb-4 flex items-center gap-2" }, React.createElement(Icon, { name: "History", size: 18 }), "Recent Queries"),
+                React.createElement('div', { className: "space-y-4 max-h-96 overflow-y-auto" },
+                  aiHistory.map(item => React.createElement(
+                    'div', { key: item.id, className: "border-l-4 border-blue-500 pl-4 py-2" },
+                    React.createElement('p', { className: "text-xs text-slate-500" }, new Date(item.ts).toLocaleString()),
+                    React.createElement('p', { className: "text-sm font-medium mt-1" }, `"${item.prompt}"`),
+                    React.createElement('p', { className: "text-sm text-slate-700 mt-2" }, item.response)
+                  ))
+                )
+              )
+            ),
+
+            // Placeholder tabs
+            activeTab !== 'dashboard' && activeTab !== 'enhancement' && React.createElement(
+              'div', { className: "bg-white p-20 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center space-y-4" },
+              React.createElement('div', { className: "p-4 bg-slate-50 rounded-full text-slate-300" },
+                React.createElement(Icon, { name: PILLARS.find(p => p.id === activeTab)?.icon || 'FileText', size: 48 })
+              ),
+              React.createElement('div', null,
+                React.createElement('h4', { className: "font-bold text-slate-800" }, "System Ready"),
+                React.createElement('p', { className: "text-slate-400 text-sm italic" },
+                  `The ${activeTab} module is successfully initialized and polling live telemetry.`
+                )
+              ),
+              React.createElement('button',
+                {
+                  onClick: () => setActiveTab('dashboard'),
+                  className: "px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-600 transition-colors"
+                },
+                "Return to Dashboard"
+              )
+            )
           )
         )
       );
     }
 
-    // PWA Registration
+    // --- PWA Service Worker Registration ---
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
