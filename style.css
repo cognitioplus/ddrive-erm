@@ -1,0 +1,17 @@
+/* style.css */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #F8FAFC;
+  margin: 0;
+  padding: 0;
+}
+
+/* Hide scrollbar for Chrome/Safari */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tailwind doesn't support this natively */
+button:focus {
+  outline: none;
+}
